@@ -1,5 +1,9 @@
 # Sillage
 
+Single-owner access: create the owner account on first launch. Registration closes
+after setup, and subsequent visitors can only sign in. Create your account before
+sharing the public address.
+
 ## Run with Docker
 
 ```sh

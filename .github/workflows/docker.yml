@@ -13,6 +13,8 @@ jobs:
         run: docker compose up -d --build --wait --wait-timeout 120
       - name: Verify HTTP response
         run: curl --fail http://127.0.0.1:18473/
+      - name: Run application and owner registration tests
+        run: docker run --rm -v "$PWD/tests:/app/tests:ro" sillage:local python -m unittest discover -s tests -q
       - name: Verify non-root process
         run: test "$(docker compose exec -T sillage id -u)" = "10001"
       - name: Show logs and clean up

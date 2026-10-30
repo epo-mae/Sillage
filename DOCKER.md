@@ -6,6 +6,12 @@ or add a read-only deploy key to this repository.
 
 ## First launch
 
+Sillage is a single-owner app. The first account created becomes the owner;
+registration then closes permanently while that account exists. Later visits
+show sign-in only. Claim your account before sharing the public URL. If importing
+an older database with several accounts, only the earliest-created account (lowest
+ID) can sign in; other accounts and their data are preserved without access.
+
 Run this one command on the server:
 
 ```sh

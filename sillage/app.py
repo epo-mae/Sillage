@@ -50,7 +50,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         value=request.get_json(silent=True)
         if not isinstance(value,dict): raise ValueError('Expected a JSON object.')
         return value
-    def user(): return db().execute('SELECT * FROM users WHERE id=?',(session.get('user_id'),)).fetchone()
+    def user(): return db().execute('SELECT * FROM users WHERE id=? AND id=(SELECT MIN(id) FROM users)',(session.get('user_id'),)).fetchone()
     def profile(row): return dict(id=row['id'],name=row['name'],email=row['email'],preferences=json.loads(row['preferences']))
     def owned(table,identifier):
         row=db().execute(f'SELECT * FROM {table} WHERE id=? AND user_id=?',(identifier,session['user_id'])).fetchone()
@@ -90,7 +90,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
     @app.get('/api/session')
     def get_session():
         if 'csrf' not in session: session['csrf']=secrets.token_hex(24)
-        return jsonify(user=profile(user()) if user() else None,csrf=session['csrf'],defaults=DEFAULTS)
+        return jsonify(user=profile(user()) if user() else None,csrf=session['csrf'],defaults=DEFAULTS,registration_open=not db().execute('SELECT 1 FROM users LIMIT 1').fetchone())
     def rate_limit():
         key=request.remote_addr
         with attempts_lock:
@@ -102,6 +102,8 @@ def create_app(database=None, testing=False, fragrance_provider=None):
     def auth(action):
         if action=='logout': session.clear(); return jsonify(ok=True)
         if action not in ['login','register']: raise ValueError('Unknown account action.')
+        if action=='register' and db().execute('SELECT 1 FROM users LIMIT 1').fetchone():
+            return jsonify(error='Registration is closed. Sign in with the owner account.',registration_open=False),403
         rate_limit(); data=body()
         email=str(data.get('email','')).strip().lower(); password=str(data.get('password',''))
         if '@' not in email or len(email)>254 or len(password)>256: raise ValueError('Enter a valid email and password.')
@@ -112,9 +114,11 @@ def create_app(database=None, testing=False, fragrance_provider=None):
             if not name: raise ValueError('Enter your name.')
             if row: raise ValueError('An account with this email already exists.')
             try: uid=write('INSERT INTO users(email,name,password,preferences,created_at) VALUES(?,?,?,?,?)',(email,name,generate_password_hash(password),json.dumps(DEFAULTS),now()))
-            except sqlite3.IntegrityError: raise ValueError('An account with this email already exists.')
+            except sqlite3.IntegrityError:
+                db().rollback()
+                return jsonify(error='Registration is closed. Sign in with the owner account.',registration_open=False),403
         else:
-            if not row or not check_password_hash(row['password'],password): raise ValueError('Email or password is incorrect.')
+            if not row or row['id']!=db().execute('SELECT MIN(id) FROM users').fetchone()[0] or not check_password_hash(row['password'],password): raise ValueError('Email or password is incorrect.')
             uid=row['id']
         session.clear(); session.update(user_id=uid,csrf=secrets.token_hex(24)); session.permanent=True
         return jsonify(user=profile(user()),csrf=session['csrf'])

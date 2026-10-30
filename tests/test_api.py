@@ -26,8 +26,23 @@ class ApiTests(unittest.TestCase):
         restarted=create_app(self.path,testing=True).test_client();csrf=restarted.get('/api/session').json['csrf'];login=restarted.post('/api/auth/login',json=dict(email='test@example.com',password='test-password-123'),headers={'X-CSRF-Token':csrf});self.assertEqual(login.status_code,200)
         self.assertEqual(restarted.get('/api/collection').json['collection'][0]['name'],'Edited')
     def test_csrf_required(self):self.assertEqual(self.client.post('/api/collection',json={}).status_code,403)
-    def test_account_isolation(self):
-        f=self.fragrance();other=self.app.test_client();token=other.get('/api/session').json['csrf'];r=other.post('/api/auth/register',json=dict(name='Other',email='other@example.com',password='other-password'),headers={'X-CSRF-Token':token});token=r.json['csrf'];self.assertEqual(other.get('/api/collection').json['collection'],[]);self.assertEqual(other.patch('/api/collection/'+str(f['id']),json={'name':'Stolen'},headers={'X-CSRF-Token':token}).status_code,400)
+    def test_only_owner_can_register(self):
+        other=self.app.test_client();token=other.get('/api/session').json['csrf']
+        self.assertFalse(other.get('/api/session').json['registration_open'])
+        r=other.post('/api/auth/register',json=dict(name='Other',email='other@example.com',password='other-password'),headers={'X-CSRF-Token':token})
+        self.assertEqual(r.status_code,403)
+        self.assertEqual(other.get('/api/collection').status_code,401)
+        self.assertFalse(r.json['registration_open'])
+        restarted=create_app(self.path,testing=True).test_client()
+        self.assertFalse(restarted.get('/api/session').json['registration_open'])
+    def test_database_rejects_second_owner(self):
+        with closing(sqlite3.connect(self.path)) as connection:
+            with self.assertRaises(sqlite3.IntegrityError):
+                connection.execute("INSERT INTO users(email,name,password,preferences,created_at) VALUES('other@example.com','Other','hash','{}','now')")
+    def test_owner_can_login_after_logout(self):
+        self.post('/auth/logout',{})
+        self.csrf=self.client.get('/api/session').json['csrf']
+        self.assertEqual(self.post('/auth/login',dict(email='test@example.com',password='test-password-123')).status_code,200)
     def test_unknown_attributes_no_fabrication(self):
         r=self.post('/collection',dict(brand='Test',name='Unknown'));self.assertEqual(r.json['fragrance']['attributes'],{})
         rec=self.post('/recommendations',{}).json;self.assertEqual(rec['candidates'][0]['confidence'],'Low')
