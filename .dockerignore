@@ -1,0 +1,12 @@
+**
+!requirements-lock.txt
+!run.py
+!sillage/
+!sillage/**
+!static/
+!static/**
+!third_party/
+!third_party/fragdb_sample/
+!third_party/fragdb_sample/**
+**/__pycache__/
+**/*.pyc

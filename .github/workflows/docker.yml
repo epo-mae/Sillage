@@ -1,0 +1,22 @@
+name: Docker verification
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose
+        run: docker compose config --quiet
+      - name: Build and start
+        run: docker compose up -d --build --wait --wait-timeout 120
+      - name: Verify HTTP response
+        run: curl --fail http://localhost:8000/
+      - name: Verify non-root process
+        run: test "$(docker compose exec -T sillage id -u)" = "10001"
+      - name: Show logs and clean up
+        if: always()
+        run: |
+          docker compose logs
+          docker compose down

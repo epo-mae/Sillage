@@ -1,0 +1,36 @@
+name: sillage
+services:
+  sillage:
+    build: .
+    image: sillage:local
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${SILLAGE_BIND_ADDRESS:-0.0.0.0}:${SILLAGE_PUBLIC_PORT:-8000}:8000"
+    environment:
+      SILLAGE_HOST: 0.0.0.0
+      SILLAGE_PORT: "8000"
+      SILLAGE_DATABASE: /app/data/sillage.db
+      SILLAGE_SECRET_KEY: ${SILLAGE_SECRET_KEY:-}
+      SILLAGE_SECURE_COOKIE: ${SILLAGE_SECURE_COOKIE:-0}
+      FRAGELLA_API_KEY: ${FRAGELLA_API_KEY:-}
+      OPEN_METEO_API_KEY: ${OPEN_METEO_API_KEY:-}
+      SILLAGE_FRAGRANCE_PROVIDER: ${SILLAGE_FRAGRANCE_PROVIDER:-}
+      SILLAGE_METADATA_TTL_DAYS: ${SILLAGE_METADATA_TTL_DAYS:-7}
+    volumes:
+      - sillage-data:/app/data
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  sillage-data:
+    name: sillage-data

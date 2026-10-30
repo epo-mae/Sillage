@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+.env
+.env.*
+!.env.example
+artifacts/
+*.db
+*.db-wal
+*.db-shm
