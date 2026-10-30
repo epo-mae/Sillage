@@ -12,7 +12,9 @@ Run this one command on the server:
 git clone git@github.com:epo-mae/Sillage.git && cd Sillage && docker compose up -d --build --wait
 ```
 
-Open `http://YOUR_SERVER_IP:8000`. The container starts on reboot as long as Docker
+Open `http://127.0.0.1:18473`. The address is accessible only on the server itself. For remote browser access, follow
+[CLOUDFLARE.md](CLOUDFLARE.md) to publish `https://sillage.sebsoong.com`.
+The container starts on reboot as long as Docker
 is enabled on startup. No Python installation is required on the host.
 
 ### Connect your Fragella account

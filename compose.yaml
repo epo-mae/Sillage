@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     init: true
     ports:
-      - "${SILLAGE_BIND_ADDRESS:-0.0.0.0}:${SILLAGE_PUBLIC_PORT:-8000}:8000"
+      - "${SILLAGE_BIND_ADDRESS:-127.0.0.1}:${SILLAGE_PUBLIC_PORT:-18473}:8000"
     environment:
       SILLAGE_HOST: 0.0.0.0
       SILLAGE_PORT: "8000"

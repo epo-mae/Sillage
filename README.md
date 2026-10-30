@@ -6,7 +6,7 @@
 git clone git@github.com:epo-mae/Sillage.git && cd Sillage && docker compose up -d --build --wait
 ```
 
-Open `http://YOUR_SERVER_IP:8000`. Requires Docker Compose and GitHub repository
+Open `http://127.0.0.1:18473`. Requires Docker Compose and GitHub repository
 access. See [DOCKER.md](DOCKER.md) for Fragella configuration, HTTPS, updates,
 backups, and moving your existing collection. Private credentials and local data
 are excluded from Git and the Docker image.

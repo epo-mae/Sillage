@@ -9,3 +9,5 @@ artifacts/
 *.db
 *.db-wal
 *.db-shm
+compose.override.yaml
+compose.override.yml
