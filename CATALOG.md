@@ -7,6 +7,21 @@ to Collection**. There is no required metadata form. The saved confirmation offe
 your skin. Manual creation appears only under **Can’t find it? Add manually**;
 brand and name are enough and other fields are collapsed.
 
+Use **Brand** (suggested names come from the current results) and **Version
+audience** to narrow similar releases before the provider's result limit is
+applied. Brand filters use the provider's exact brand names, including its documented
+Lattafa/Lattafa Perfumes alias. **Show more matches** loads the supported second
+page, up to 20 results total. Search caching separates query, brand, audience and
+page. Result rows show source year, concentration, audience, bottle image and
+up to three opening notes when supplied. These are identification aids, not
+guarantees that similarly named entries are the same fragrance.
+
+For a multiword search, **See the … family** retries without the last word,
+preserving filters. It broadens the search; it does not assert an alias or choose
+a replacement. If an exact version is absent or incorrectly described, use manual
+entry; the searched name and brand are carried over. Manufacturer listings are
+not silently merged into provider facts or invented community data.
+
 ## Configure Fragella
 
 Create or edit the ignored `.env` file in the project root:
@@ -23,7 +38,8 @@ at startup; process environment settings take precedence. For a safe credential
 check, run `.venv\Scripts\python.exe scripts\check_fragella.py`. It prints only
 status and non-secret diagnostics, never the key or raw response bodies.
 
-Provider requests use documented `GET /api/v1/fragrances?search=…&limit=10` and
+Provider requests use documented `GET /api/v1/fragrances?search=…&limit=10&page=1`
+(or page 2), with optional `brand` and `gender` filters, and
 `GET /api/v1/fragrances/:id` endpoints with `x-api-key`. Honest application
 identification uses `User-Agent: Sillage/0.2`. Search inputs tolerate capitalization,
 partial matches and minor typos through the provider's fuzzy search; common

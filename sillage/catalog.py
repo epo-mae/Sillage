@@ -63,6 +63,11 @@ class FragranceDataProvider(ABC):
     def get_fragrance(self, external_id): pass
     @abstractmethod
     def status(self): pass
+    def search_page(self,query,page=1,brand='',gender=''):
+        records=self.search_fragrances(query)
+        if brand:records=[m for m in records if search_text(brand) in search_text(m['brand'])]
+        if gender:records=[m for m in records if str(m.get('gender')or'').lower() in gender.split(',')]
+        return records if page==1 else [],False
     def get_fragrance_notes(self, external_id): return self.get_fragrance(external_id)['note_pyramid']
     def get_fragrance_accords(self, external_id): return self.get_fragrance(external_id)['main_accords']
     def get_community_ratings(self, external_id): return self.get_fragrance(external_id)['community_rating']
@@ -253,6 +258,15 @@ class FragellaProvider(FragranceDataProvider):
         if isinstance(raw,dict):raw=raw.get('data',[])
         if not isinstance(raw,list):raise CatalogError('The fragrance provider returned an invalid search response.')
         return [normalize_fragella(r)for r in raw]
+    def search_page(self,query,page=1,brand='',gender=''):
+        params=dict(search=search_text(query),limit=10,page=page)
+        if brand:params['brand']=brand
+        if gender:params['gender']=gender
+        raw=self.fetch('fragrances',params)
+        more=isinstance(raw,dict) and bool(raw.get('pagination',{}).get('has_more')) and page<2
+        rows=raw.get('data',[])if isinstance(raw,dict)else raw
+        if not isinstance(rows,list):raise CatalogError('The fragrance provider returned an invalid search response.')
+        return [normalize_fragella(r)for r in rows],more
     def get_fragrance(self,external_id):
         raw=self.fetch('fragrances/'+quote(str(external_id),safe=''))
         if isinstance(raw,list):raw=raw[0]if raw else None

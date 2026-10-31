@@ -74,6 +74,18 @@ class ProviderTests(unittest.TestCase):
             m=FragellaProvider('test-secret').search_fragrances('Dior homme')[0]
         self.assertEqual(m['name'],'Homme EDP');self.assertEqual(request.call_args.args[0].get_header('X-api-key'),'test-secret')
         self.assertNotIn('test-secret',json.dumps(m))
+    def test_filtered_pages_keep_distinct_versions(self):
+        from urllib.parse import urlparse,parse_qs
+        from io import BytesIO
+        raw={'data':[ROW,{**ROW,'_id':'another-release','Name':'Homme Parfum','OilType':'Parfum'}],'pagination':{'has_more':True}}
+        with patch('sillage.catalog.urlopen',return_value=BytesIO(json.dumps(raw).encode())) as request:
+            rows,more=FragellaProvider('test-secret').search_page('Homme',1,'Dior','men,unisex')
+        self.assertEqual(len(rows),2);self.assertTrue(more)
+        params=parse_qs(urlparse(request.call_args.args[0].full_url).query)
+        self.assertEqual(params['brand'],['Dior']);self.assertEqual(params['gender'],['men,unisex']);self.assertEqual(params['page'],['1'])
+        with patch('sillage.catalog.urlopen',return_value=BytesIO(json.dumps(raw).encode())):
+            rows,more=FragellaProvider('test-secret').search_page('Homme',2)
+        self.assertFalse(more)
     def test_refresh_keeps_overrides(self):
         m=normalize_fragella(ROW);old=collection_data(m)
         old.update(longevity=7,notes='my personal note',rating=5,overrides=['longevity','attributes.projection']);old['attributes']['projection']=30
@@ -130,6 +142,21 @@ class CatalogApiTests(unittest.TestCase):
         fid=self.add().json['fragrance']['id'];self.client.delete('/api/collection/'+str(fid),headers={'X-CSRF-Token':self.csrf});self.assertEqual(self.add().status_code,201)
     def test_catalog_requires_authentication(self):
         anonymous=self.app.test_client();self.assertEqual(anonymous.get('/api/catalog/search?q=Dior').status_code,401)
+    def test_search_pages_filters_and_selected_preview_cache(self):
+        first=normalize_fragella(ROW)
+        second=normalize_fragella({**ROW,'_id':'second-page','Name':'Homme Parfum','OilType':'Parfum'})
+        with patch.object(self.provider,'search_page',side_effect=[([first],True),([second],False)]) as search:
+            a=self.client.get('/api/catalog/search?q=Homme&brand=Dior&gender=men&page=1').json
+            b=self.client.get('/api/catalog/search?q=Homme&brand=Dior&gender=men&page=2').json
+            self.assertTrue(a['has_more']);self.assertFalse(b['has_more'])
+            self.assertEqual(search.call_args_list[1].args,('Homme',2,'Dior','men'))
+            self.client.get('/api/catalog/search?q=Homme&brand=Dior&gender=men&page=2')
+            self.assertEqual(search.call_count,2)
+        # Page-two entries can be selected without another provider request.
+        with patch.object(self.provider,'name','fragella'):
+            self.assertEqual(self.client.get('/api/catalog/fragrances/second-page').json['fragrance']['name'],'Homme Parfum')
+        self.assertEqual(self.client.get('/api/catalog/search?q=Homme&page=3').status_code,400)
+        self.assertEqual(self.client.get('/api/catalog/search?q=Homme&gender=bad').status_code,400)
     def test_add_does_not_accept_client_metadata(self):
         r=self.post('/collection/from-catalog',dict(provider='fragella',external_id=ROW['_id'],brand='Fake',attributes={'projection':0}))
         self.assertEqual(r.json['fragrance']['brand'],'Fixture Dior');self.assertEqual(r.json['fragrance']['attributes']['projection'],80)

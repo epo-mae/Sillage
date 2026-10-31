@@ -36,7 +36,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         connection.commit()
     attempts={}; attempts_lock=threading.Lock()
     catalog_provider=fragrance_provider or configured_provider()
-    search_cache={}; catalog_lock=threading.Lock()
+    search_cache={}; search_more={}; catalog_lock=threading.Lock()
     metadata_ttl=int(os.environ.get('SILLAGE_METADATA_TTL_DAYS','7'))*86400
 
     def db():
@@ -224,17 +224,27 @@ def create_app(database=None, testing=False, fragrance_provider=None):
     @authenticated
     def catalog_search():
         query=request.args.get('q','').strip()
+        brand=request.args.get('brand','').strip()
+        gender=request.args.get('gender','').strip()
+        page=request.args.get('page','1')
+        if page not in ['1','2']:raise ValueError('Invalid search page.')
+        page=int(page)
+        if len(brand)>80:raise ValueError('Use a shorter brand name.')
+        if gender not in ['', 'men', 'women', 'unisex', 'men,unisex', 'women,unisex']:raise ValueError('Invalid fragrance audience filter.')
         if len(query)>150:raise ValueError('Use a shorter search query.')
         if len(query)<3:return jsonify(results=[],catalog=catalog_provider.status())
-        cache_key=query.casefold()
+        cache_key=(query.casefold(),brand.casefold(),gender,page)
         with catalog_lock:cached=search_cache.get(cache_key)
         if cached and time.time()-cached[0]<900:results=cached[1]
         else:
-            results=catalog_provider.search_fragrances(query)
+            results,more=catalog_provider.search_page(query,page,brand,gender)
             with catalog_lock:
-                if len(search_cache)>=100:search_cache.pop(next(iter(search_cache)))
+                if len(search_cache)>=100:
+                    oldest=next(iter(search_cache));search_cache.pop(oldest);search_more.pop(oldest,None)
                 search_cache[cache_key]=(time.time(),results)
-        return jsonify(results=[dict(m,owned_id=already_owned(m))for m in results],catalog=catalog_provider.status())
+                search_more[cache_key]=more
+        with catalog_lock:has_more=search_more.get(cache_key,False)
+        return jsonify(results=[dict(m,owned_id=already_owned(m))for m in results],catalog=catalog_provider.status(),page=page,has_more=has_more)
     @app.get('/api/catalog/fragrances/<path:external_id>')
     @authenticated
     def catalog_detail(external_id):
