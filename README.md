@@ -75,6 +75,17 @@ Attributes, preferences and contextual snapshots use validated JSON documents in
 
 Default weights: temperature 15, weather 12, occasion 15, environment 10, time 8, season 5, projection 8, longevity 8, preference 10, history 5, rotation 4. Unknown attribute-dependent dimensions are omitted and known weights renormalized. Unknown occasion and environment are excluded rather than defaulted to casual or a setting. Missing personal ratings, feedback and community ratings receive no neutral points. A fragrance with no known scoring evidence is marked Not scored. Rotation remains at most four points even when metadata is sparse. Extreme heat with a rich/sweet profile and strong projection in confined settings receive 30-point penalties; severe longevity mismatch or very casual/formal mismatch receive 20-point penalties. Final score is clamped to 0â€“100.
 
+Temperature uses both warmth and freshness, with a target that changes continuously
+with measured temperature (including a 70/30 air/feels-like blend when available).
+Humidity freshness bonuses apply only from 20°C; known outdoor wind/rain still
+contribute separately. A weak temperature fit below 60 limits the final score to
+`100 × (temperature_fit / 60)^1.25`. This is an explicit model heuristic, not a
+universal rule about a fragrance. The deduction is shown in the breakdown. Missing
+temperature data is omitted, and disabling its weight disables this limit. If the
+top candidate is limited, Today labels it a weak-temperature-fit fallback rather
+than an unqualified recommendation. Saved older snapshots retain their original
+engine version and calculations.
+
 Confidence is distinct from match: metadata coverage, forecast availability, certainty of plans, community vote support, inferred fields and feedback quantity determine High/Medium/Low reliability. Personal longevity and satisfaction blend with 5â€“25 equivalent prior observations so a single wear cannot dominate. Community season/occasion/day-night distributions feed the engine directly where supplied, while explicit user overrides take priority. Explanations use actual components and penalties; no LLM chooses the winner.
 
 ### Internal API

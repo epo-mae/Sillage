@@ -15,6 +15,33 @@ def context(**changes):
     c=build_context(PREFS,now=NOW);c.update(temperature=12,humidity=60,occasion='dinner',environment='indoor',weather={'available':True});c.update(changes);return c
 
 class ScoringTests(unittest.TestCase):
+    def test_nine_degrees_fresh_citrus_does_not_win_from_spring_and_humidity(self):
+        # Spectrum Chill's observed inferred warmth/freshness were 50/100.
+        # Model this profile generically; the algorithm never checks product names.
+        fresh=fragrance(1,attributes={'warmth':50,'freshness':100,'projection':50},rating=5,seasons=['spring'],longevity=10)
+        warm=fragrance(2,attributes={'warmth':85,'freshness':20,'projection':65},rating=4,seasons=['winter'],longevity=8)
+        c=context(temperature=9,feels_like=9,humidity=95,occasion='unknown',environment='unknown',season='spring')
+        results=rank([fresh,warm],c,PREFS,[])
+        self.assertEqual(results[0]['fragrance']['id'],2)
+        result=next(r for r in results if r['fragrance']['id']==1)
+        self.assertEqual(result['components']['temperature'],40)
+        self.assertNotIn('weather',result['components'])
+        self.assertLessEqual(result['score'],61)
+        self.assertIn('9.0°C',result['temperature_limit']['reason'])
+        self.assertAlmostEqual(result['score'],round(result['base']-sum(p['amount'] for p in result['penalties'])),delta=1)
+    def test_fresh_citrus_recovers_in_warm_weather(self):
+        f=fragrance(attributes={'warmth':50,'freshness':100,'projection':50})
+        cold=score(f,context(temperature=9,feels_like=9),PREFS,[])
+        mild=score(f,context(temperature=22,feels_like=22),PREFS,[])
+        self.assertGreater(mild['components']['temperature'],cold['components']['temperature'])
+        self.assertIsNone(mild['temperature_limit'])
+    def test_temperature_limit_requires_known_enabled_temperature(self):
+        f=fragrance(attributes={'projection':50})
+        self.assertIsNone(score(f,context(temperature=9),PREFS,[])['temperature_limit'])
+        f=fragrance(attributes={'warmth':50,'freshness':100,'projection':50})
+        result=score(f,context(temperature=None,feels_like=None),PREFS,[])
+        self.assertNotIn('temperature',result['components']);self.assertIsNone(result['temperature_limit'])
+        self.assertIsNone(score(f,context(temperature=9),PREFS,[],{**WEIGHTS,'temperature':0})['temperature_limit'])
     def test_unknown_environment_and_occasion_are_not_scored(self):
         result=score(fragrance(),context(environment='unknown',occasion='unknown'),PREFS,[])
         for key in ['environment','occasion']:

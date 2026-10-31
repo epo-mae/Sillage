@@ -332,7 +332,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         weather,warning=weather_for(prefs)
         context=build_context(prefs,weather,events() if prefs['calendar_enabled'] else [],mode=mode,event_id=data.get('event_id'))
         candidates=rank(collection(),context,prefs,wears())
-        snapshot=dict(context=context,candidates=candidates,warning=warning,mode=mode,application=prefs['application'],weights=prefs['weights'],engine_version=3)
+        snapshot=dict(context=context,candidates=candidates,warning=warning,mode=mode,application=prefs['application'],weights=prefs['weights'],engine_version=4)
         rid=write('INSERT INTO recommendations(user_id,created_at,snapshot) VALUES(?,?,?)',(session['user_id'],now(),json.dumps(snapshot)))
         return jsonify(dict(snapshot,id=rid))
     @app.get('/api/history')

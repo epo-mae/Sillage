@@ -29,14 +29,17 @@ def score(fragrance, context, preferences, wears, weights=None):
     supplied = lambda value: value is not None and str(value).strip().lower() not in ['', 'unknown', 'unavailable', 'not listed', 'automatic']
     environment = context.get('environment')
     if temp is not None and known('warmth') and known('freshness'):
-        desired = clamp((25 - temp) * 4)
-        components['temperature'] = clamp(100 - abs(a['warmth'] - desired)*.75 - abs(a['freshness']-(100-desired))*.25)
-    if context.get('humidity') is not None and known('freshness'):
-        components['weather'] = clamp(95 - max(0,context['humidity']-65)*max(0,50-a['freshness'])/60)
-        if environment=='outdoor' and known('projection'):
-            # Exposure during the horizon can reduce perceived presence.
-            exposure=min(15,max(0,(context.get('wind') or 0)-15)*.3+(context.get('precipitation') or 0)*2)
-            components['weather']=clamp(components['weather']-exposure*max(0,60-a['projection'])/60)
+        # Balance both attributes: moderate amber/sweetness must not make a very
+        # fresh citrus profile look almost ideally warm at single-digit Celsius.
+        desired = clamp((26-temp)*5)
+        thermal_profile = (a['warmth']+100-a['freshness'])/2
+        components['temperature'] = clamp(100-abs(thermal_profile-desired))
+    humidity_relevant = temp is not None and temp>=20 and context.get('humidity') is not None and known('freshness')
+    if humidity_relevant:
+        components['weather'] = clamp(95-max(0,context['humidity']-65)*max(0,50-a['freshness'])/60)
+    if environment=='outdoor' and known('projection') and (context.get('wind') is not None or context.get('precipitation') is not None):
+        exposure=min(15,max(0,(context.get('wind') or 0)-15)*.3+(context.get('precipitation') or 0)*2)
+        components['weather']=clamp(components.get('weather',100)-exposure*max(0,60-a['projection'])/60)
     occasion = context.get('occasion')
     community_occasion=community_suitability(fragrance,'occasions',occasion)
     if supplied(occasion) and community_occasion is not None:components['occasion']=community_occasion
@@ -98,6 +101,17 @@ def score(fragrance, context, preferences, wears, weights=None):
     contributions = {k: (components[k]*rotation_share if k=='rotation' else components[k]*effective[k]/nonrotation*(1-rotation_share) if nonrotation else 0) for k in components}
     base = sum(contributions.values()) if nonrotation else None
     final = round(clamp(base-sum(p['amount'] for p in penalties))) if base is not None else None
+    # A high seasonal rank, popularity or longevity cannot turn a weak measured
+    # temperature fit into a strong overall recommendation. Unknown fit is left
+    # out entirely, and an explicitly disabled temperature weight stays disabled.
+    temperature_limit=None
+    if final is not None and effective.get('temperature',0)>0 and components['temperature']<60:
+        ceiling=round(100*(components['temperature']/60)**1.25)
+        if final>ceiling:
+            temperature_limit=dict(temperature=round(temp,1),fit=round(components['temperature'],1),ceiling=ceiling,amount=final-ceiling,
+                                   reason=f'Weak temperature fit at {temp:.1f}°C limits the overall score to {ceiling}/100.')
+            penalties.append(dict(amount=final-ceiling,reason=temperature_limit['reason'],type='temperature_limit'))
+            final=ceiling
     if base is None:contributions={key:0 for key in components}
     coverage = sum(WEIGHTS[k] for k in components if k not in ['history','rotation','preference'])/81
     certainty = .5*min(1,coverage)+.2*bool(context.get('weather'))+.15*context.get('context_certainty',.4)+.15*min(1,len(feedback)/5)
@@ -118,17 +132,21 @@ def score(fragrance, context, preferences, wears, weights=None):
     strongest = sorted((k for k in components if k not in ['history','rotation','preference']),key=lambda k:components[k],reverse=True)[:2]
     reasons = {'temperature':'Its profile suits temperatures across your wear horizon.', 'weather':'Its freshness is a good fit for the humidity.', 'occasion':f'It fits your {occasion} plans.', 'environment':'Its projection suits your surroundings.', 'projection':'Its projection fits your preferred presence.', 'time':f'It suits the {context.get("daypart")}.', 'season':f'It fits the {context.get("season")} season.', 'longevity':'Its estimated longevity covers your plans.'}
     omitted={k:'Not used: the context or fragrance information for this factor is unknown.' for k in WEIGHTS if k not in components}
+    if 'weather' not in components and temp is not None and temp<20:
+        omitted['weather']='Not used: humidity freshness scoring applies to warm weather; no known outdoor exposure is being scored.'
     explanation = ' '.join(reasons[k] for k in strongest if components[k]>=75)
     if not explanation: explanation = 'This is the closest fit among the attributes you have supplied.'
     if final is None: explanation = 'Not enough known information to score this fragrance.'
     if recent and final is not None: explanation += ' Recent wears slightly reduce its rotation score.'
     if penalties: explanation += ' '+penalties[0]['reason']
+    if temperature_limit and penalties[0].get('type')!='temperature_limit':explanation+=' '+temperature_limit['reason']
+    if temperature_limit:explanation = temperature_limit['reason']+' Other factors do not make it a strong temperature match.'
     if confidence=='Low': explanation += ' Add more metadata or context to improve reliability.'
     return dict(fragrance=fragrance, score=final, confidence=confidence, certainty=round(certainty*100),
                 components={k:round(v,1) for k,v in components.items()}, weights=effective,
                 contributions={k:round(contributions[k],2) for k in components},
                 base=round(base,2) if base is not None else None, penalties=penalties, sprays=sprays,
-                personal_longevity=longevity, explanation=explanation, omitted=omitted,
+                personal_longevity=longevity, explanation=explanation, omitted=omitted,temperature_limit=temperature_limit,
                 community_prior=dict(rating=community_value,rating_count=sample_count,equivalent_observations=round(prior_count,1)))
 
 def rank(collection, context, preferences, wears):
