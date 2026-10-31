@@ -5,15 +5,16 @@ from functools import wraps
 from contextlib import closing
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from flask import Flask, request, jsonify, session, g
+from itsdangerous import URLSafeTimedSerializer, BadSignature
 from werkzeug.security import generate_password_hash, check_password_hash
-from .engine import rank, ATTRIBUTES, WEIGHTS
+from .engine import rank, personal_constraints, ATTRIBUTES, WEIGHTS
 from .context import build_context
 from . import layering
 from .providers import weather_for, import_calendar
 from .catalog import configured_provider, CatalogError, collection_data, merge_metadata, utc_now
 
 ROOT=Path(__file__).resolve().parent.parent
-DEFAULTS=dict(timezone='Pacific/Auckland',location='',latitude=None,longitude=None,weather_enabled=True,calendar_enabled=True,application=True,projection=50,variety=1,favorite_bias=4,occasion='automatic',units='celsius',weights=WEIGHTS.copy())
+DEFAULTS=dict(timezone='Pacific/Auckland',location='',latitude=None,longitude=None,weather_enabled=True,calendar_enabled=True,application=True,projection=50,variety=1,favorite_bias=4,occasion='automatic',units='celsius',weights=WEIGHTS.copy(),importance=None)
 OCCASIONS=['casual','work','dinner','date','formal','wedding','interview','party','outdoor','travel']
 
 def create_app(database=None, testing=False, fragrance_provider=None):
@@ -21,7 +22,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
     # Tie each page load to the assets shipped with this deployment. Browsers and
     # reverse proxies may retain unversioned JavaScript long after a rebuild.
     index_html=(ROOT/'static/index.html').read_text(encoding='utf-8')
-    for asset in ['app.js','catalog.js','atmosphere.js','layering.js','style.css','catalog.css','atmosphere.css','mark.svg']:
+    for asset in ['priorities.js','app.js','catalog.js','atmosphere.js','layering.js','style.css','catalog.css','atmosphere.css','mark.svg']:
         version=hashlib.sha256((ROOT/'static'/asset).read_bytes()).hexdigest()[:16]
         index_html=index_html.replace(f'"/{asset}"',f'"/{asset}?v={version}"')
     data_dir=ROOT/'data'; data_dir.mkdir(exist_ok=True)
@@ -144,6 +145,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
     def update_profile():
         data=body(); preferences=json.loads(user()['preferences']); incoming=data.get('preferences',{})
         if not isinstance(incoming,dict): raise ValueError('Invalid preferences.')
+        if 'weights' in incoming and 'importance' in incoming:raise ValueError('Supply priorities or legacy weights, not both.')
         for key,value in incoming.items():
             if key not in DEFAULTS: raise ValueError(f'Unknown setting: {key}')
             if key=='timezone':
@@ -161,11 +163,19 @@ def create_app(database=None, testing=False, fragrance_provider=None):
                 if not isinstance(value,dict) or set(value)!=set(WEIGHTS): raise ValueError('Supply all scoring weights.')
                 value={k:finite(v,0,100,k) for k,v in value.items()}
                 if sum(value.values())<=0: raise ValueError('At least one weight must be positive.')
-                if value['rotation']/sum(value.values())>.04: raise ValueError('Rotation must stay at or below 4% of the total.')
+                preferences['importance']=None
+            if key=='importance':
+                value=validate_importance(value)
+                preferences['weights']=value.copy()
             preferences[key]=value
         if (preferences['latitude'] is None)!=(preferences['longitude'] is None): raise ValueError('Supply both coordinates or clear both.')
         write('UPDATE users SET preferences=? WHERE id=?',(json.dumps(preferences),session['user_id']))
         return jsonify(user=profile(user()))
+    def validate_importance(value):
+        if not isinstance(value,dict) or set(value)!=set(WEIGHTS):raise ValueError('Supply an importance for every factor.')
+        result={k:finite(v,0,10,k) for k,v in value.items()}
+        if not any(result.values()):raise ValueError('Keep at least one factor enabled.')
+        return result
     def fragrance_data(data):
         result={}
         for key in ['brand','name','concentration','family','notes','top_notes','middle_notes','base_notes','accords','tags']:
@@ -181,6 +191,15 @@ def create_app(database=None, testing=False, fragrance_provider=None):
             if not isinstance(value,list) or any(v not in options for v in value): raise ValueError(f'Invalid {key}.')
             result[key]=value
         result['favorite']=bool(data.get('favorite',False))
+        limits=data.get('limits')
+        if limits is None:limits={}
+        if not isinstance(limits,dict) or set(limits)-{'min_temperature','max_temperature','avoid_confined'}:raise ValueError('Invalid personal boundaries.')
+        limits={k:v for k,v in limits.items() if v not in [None,'']}
+        for key in ['min_temperature','max_temperature']:
+            if key in limits:limits[key]=finite(limits[key],-40,60,key)
+        if not isinstance(limits.get('avoid_confined',False),bool):raise ValueError('Invalid confined-space boundary.')
+        if limits.get('min_temperature',-40)>limits.get('max_temperature',60):raise ValueError('Minimum temperature must not exceed maximum temperature.')
+        result['limits']=limits
         result['source']='fictional example' if data.get('source')=='fictional example' else 'user-entered estimates'
         return result
     def metadata_for(external_id,refresh=False):
@@ -370,6 +389,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
             option=saved.get('layering_option')
             if not option or option['recipe']['id']!=identifier:raise ValueError('This recipe was not suggested in that recommendation.')
             context=saved['context']
+            if any(personal_constraints(recipe[k],context) for k in ['first','second']):raise ValueError('This suggestion conflicts with your updated personal boundaries. Refresh Wear Now.')
         else:
             prefs=json.loads(user()['preferences']);weather,_=weather_for(prefs)
             context=build_context(prefs,weather,events() if prefs['calendar_enabled'] else [])
@@ -391,6 +411,25 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         longevity=finite(data['longevity'],.5,48,'longevity') if data.get('longevity') not in [None,''] else None
         feedback=dict(rating=rating,comparison=comparison,strength=strength,longevity=longevity,note=str(data.get('note',''))[:2000])
         write('UPDATE layering_wears SET feedback=? WHERE id=?',(json.dumps(feedback),identifier));return jsonify(ok=True)
+    @app.post('/api/recommendations/preview')
+    @authenticated
+    def preview_recommendation():
+        data=body();signer=URLSafeTimedSerializer(app.config['SECRET_KEY'],salt='scoring-preview')
+        if data.get('preview_token'):
+            if not isinstance(data['preview_token'],str) or len(data['preview_token'])>30000:raise ValueError('Invalid preview session.')
+            try:saved=signer.loads(data['preview_token'],max_age=3600)
+            except BadSignature:raise ValueError('Preview expired. Reopen Preferences to refresh it.')
+            if saved['user_id']!=session['user_id']:raise ValueError('Invalid preview session.')
+        elif data.get('recommendation_id') is not None:
+            rec=owned('recommendations',data['recommendation_id']);saved=json.loads(rec['snapshot'])
+            if (datetime.now(timezone.utc)-datetime.fromisoformat(rec['created_at'])).total_seconds()>3600:raise ValueError('Refresh the comparison before previewing priorities.')
+        else:
+            prefs=json.loads(user()['preferences']);weather,_=weather_for(prefs)
+            saved=dict(context=build_context(prefs,weather,events() if prefs['calendar_enabled'] else []),mode='now')
+        prefs=json.loads(user()['preferences']);prefs['weights']=validate_importance(data.get('importance'))
+        candidates=rank(collection(),saved['context'],prefs,rotation_wears(wears(),layering_wears()))
+        token=signer.dumps(dict(context=saved['context'],mode=saved['mode'],user_id=session['user_id']))
+        return jsonify(context=saved['context'],candidates=candidates,mode='preview',preview=True,weights=prefs['weights'],importance=prefs['weights'],preview_token=token)
     @app.post('/api/recommendations')
     @authenticated
     def recommend():
@@ -400,7 +439,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         context=build_context(prefs,weather,events() if prefs['calendar_enabled'] else [],mode=mode,event_id=data.get('event_id'))
         singles=wears();pairs=layering_wears();saved_recipes=recipes()
         candidates=rank(collection(),context,prefs,rotation_wears(singles,pairs))
-        snapshot=dict(context=context,candidates=candidates,warning=warning,mode=mode,application=prefs['application'],weights=prefs['weights'],engine_version=5,
+        snapshot=dict(context=context,candidates=candidates,warning=warning,mode=mode,application=prefs['application'],weights=prefs['weights'],importance=prefs.get('importance'),engine_version=6,
                       layering_option=layering.recommendation(saved_recipes,pairs,singles,candidates,context),layering_experiments=layering.experiments(candidates,saved_recipes))
         rid=write('INSERT INTO recommendations(user_id,created_at,snapshot) VALUES(?,?,?)',(session['user_id'],now(),json.dumps(snapshot)))
         return jsonify(dict(snapshot,id=rid))
@@ -415,10 +454,12 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         data=body(); rec=owned('recommendations',data.get('recommendation_id')); snapshot=json.loads(rec['snapshot'])
         candidate=next((c for c in snapshot['candidates'] if c['fragrance']['id']==data.get('fragrance_id')),None)
         if not candidate: raise ValueError('Select a fragrance from this recommendation.')
+        if candidate.get('excluded'):raise ValueError('This fragrance is excluded by your personal boundaries.')
         if snapshot['mode']!='now': raise ValueError('Switch to Wear Now to record what you apply now.')
         if (datetime.now(timezone.utc)-datetime.fromisoformat(rec['created_at'])).total_seconds()>3600: raise ValueError('Refresh your recommendation before recording a wear.')
         fid=candidate['fragrance']['id']; owned('fragrances',fid)
         if owned('fragrances',fid)['archived']: raise ValueError('This fragrance has been archived. Refresh your recommendation.')
+        if personal_constraints(json.loads(owned('fragrances',fid)['data']),snapshot['context']):raise ValueError('This suggestion conflicts with your updated personal boundaries. Refresh Wear Now.')
         actual=finite(data['sprays'],1,20,'sprays') if data.get('sprays') is not None else None
         wear_snapshot=dict(context=snapshot['context'],candidate=candidate,actual_sprays=actual)
         db().execute('BEGIN IMMEDIATE')

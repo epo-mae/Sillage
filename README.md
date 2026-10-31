@@ -4,6 +4,11 @@ Single-owner access: create the owner account on first launch. Registration clos
 after setup, and subsequent visitors can only sign in. Create your account before
 sharing the public address.
 
+**Preferences → Your priorities** offers 1–10 sliders, presets, and live ranking
+previews. Fit scores are out of 10; breakdowns separate importance, actual share,
+fit, and information quality. **Edit → Personal boundaries** sets per-fragrance
+temperature limits and confined-space exclusions. See [SCORING.md](SCORING.md).
+
 Use **Compare all** in Collection or **Compare all fragrances** on Today to see
 every active fragrance ranked for the same context. Search the list and open any
 score to inspect weighted contributions, penalties, ties, and missing data.

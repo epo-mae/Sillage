@@ -24,9 +24,9 @@ and the never-worn filter.
 Singles remain the default. No pair fit score is invented or averaged. At most one
 optional pair appears, selected by observed personal preference:
 
-- Both bottles are active and score at least 70 individually, with no penalties.
+- Both bottles are active and score at least 7/10 individually, with no penalties.
   Every known temperature, weather, time, season, occasion, environment, projection
-  and longevity component must score at least 60.
+  and longevity component must score at least 6/10.
 - The exact recipe has positive reviews on at least three different local dates
   in comparable conditions. Repeated logging on one day cannot satisfy this gate.
 - At least 80% of the last ten matching reviews rate it 4/5 or higher, say

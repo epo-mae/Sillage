@@ -11,6 +11,14 @@ ATTRIBUTES = ['sweetness','freshness','warmth','spiciness','woodiness','citrus',
 def clamp(value):
     return max(0, min(100, value))
 
+def personal_constraints(fragrance,context):
+    limits=fragrance.get('limits') or {};constraints=[];temp=context.get('temperature')
+    if temp is not None:
+        if limits.get('min_temperature') is not None and temp<limits['min_temperature']:constraints.append(f'Your rule: do not suggest below {limits["min_temperature"]:g}°C (currently {temp:g}°C).')
+        if limits.get('max_temperature') is not None and temp>limits['max_temperature']:constraints.append(f'Your rule: do not suggest above {limits["max_temperature"]:g}°C (currently {temp:g}°C).')
+    if limits.get('avoid_confined') and context.get('environment')=='confined':constraints.append('Your rule: do not suggest in confined spaces.')
+    return constraints
+
 def community_suitability(fragrance,dimension,label):
     if dimension in fragrance.get('overrides',[]):return None
     data=fragrance.get('metadata',{}).get('community',{}).get(dimension,{})
@@ -99,6 +107,7 @@ def score(fragrance, context, preferences, wears, weights=None):
     rotation_share = min(.04, effective.get('rotation',0)/total) if total else 0
     nonrotation = sum(v for k,v in effective.items() if k!='rotation')
     contributions = {k: (components[k]*rotation_share if k=='rotation' else components[k]*effective[k]/nonrotation*(1-rotation_share) if nonrotation else 0) for k in components}
+    shares={k:100*(rotation_share if k=='rotation' else effective[k]/nonrotation*(1-rotation_share) if nonrotation else 0) for k in components}
     base = sum(contributions.values()) if nonrotation else None
     final = round(clamp(base-sum(p['amount'] for p in penalties))) if base is not None else None
     # A high seasonal rank, popularity or longevity cannot turn a weak measured
@@ -112,7 +121,11 @@ def score(fragrance, context, preferences, wears, weights=None):
                                    reason=f'Weak temperature fit at {temp:.1f}°C limits the overall score to {ceiling}/100.')
             penalties.append(dict(amount=final-ceiling,reason=temperature_limit['reason'],type='temperature_limit'))
             final=ceiling
-    if base is None:contributions={key:0 for key in components}
+    if base is None:
+        contributions={key:0 for key in components};shares={key:0 for key in components}
+    constraints=personal_constraints(fragrance,context)
+    if constraints:
+        penalties.append(dict(amount=final or 0,reason=' '.join(constraints),type='personal_boundary'));final=0
     coverage = sum(WEIGHTS[k] for k in components if k not in ['history','rotation','preference'])/81
     certainty = .5*min(1,coverage)+.2*bool(context.get('weather'))+.15*context.get('context_certainty',.4)+.15*min(1,len(feedback)/5)
     if fragrance.get('metadata'):
@@ -129,7 +142,7 @@ def score(fragrance, context, preferences, wears, weights=None):
     if sprays is not None and len(strength_feedback)>=3:
         sprays = max(1,min(5,sprays + round((strength_feedback.count('too weak')-strength_feedback.count('too strong'))/len(strength_feedback))))
     if sprays is not None and environment=='confined': sprays = min(sprays,2)
-    strongest = sorted((k for k in components if k not in ['history','rotation','preference']),key=lambda k:components[k],reverse=True)[:2]
+    strongest = sorted((k for k in components if k not in ['history','rotation','preference'] and effective.get(k,0)>0),key=lambda k:components[k],reverse=True)[:2]
     reasons = {'temperature':'Its profile suits temperatures across your wear horizon.', 'weather':'Its freshness is a good fit for the humidity.', 'occasion':f'It fits your {occasion} plans.', 'environment':'Its projection suits your surroundings.', 'projection':'Its projection fits your preferred presence.', 'time':f'It suits the {context.get("daypart")}.', 'season':f'It fits the {context.get("season")} season.', 'longevity':'Its estimated longevity covers your plans.'}
     omitted={k:'Not used: the context or fragrance information for this factor is unknown.' for k in WEIGHTS if k not in components}
     if 'weather' not in components and temp is not None and temp<20:
@@ -141,9 +154,10 @@ def score(fragrance, context, preferences, wears, weights=None):
     if penalties: explanation += ' '+penalties[0]['reason']
     if temperature_limit and penalties[0].get('type')!='temperature_limit':explanation+=' '+temperature_limit['reason']
     if temperature_limit:explanation = temperature_limit['reason']+' Other factors do not make it a strong temperature match.'
-    if confidence=='Low': explanation += ' Add more metadata or context to improve reliability.'
+    if constraints:explanation=' '.join(constraints)
+    if confidence=='Low' and not constraints: explanation += ' Add more metadata or context to improve reliability.'
     return dict(fragrance=fragrance, score=final, confidence=confidence, certainty=round(certainty*100),
-                components={k:round(v,1) for k,v in components.items()}, weights=effective,
+                components={k:round(v,1) for k,v in components.items()}, weights=effective,shares={k:round(v,3) for k,v in shares.items()},excluded=bool(constraints),constraints=constraints,
                 contributions={k:round(contributions[k],2) for k in components},
                 base=round(base,2) if base is not None else None, penalties=penalties, sprays=sprays,
                 personal_longevity=longevity, explanation=explanation, omitted=omitted,temperature_limit=temperature_limit,
@@ -151,4 +165,4 @@ def score(fragrance, context, preferences, wears, weights=None):
 
 def rank(collection, context, preferences, wears):
     result = [score(f,context,preferences,wears,preferences.get('weights')) for f in collection]
-    return sorted(result,key=lambda r:(-(r['score'] if r['score'] is not None else -1),r['fragrance']['id']))
+    return sorted(result,key=lambda r:(r.get('excluded',False),-(r['score'] if r['score'] is not None else -1),r['fragrance']['id']))

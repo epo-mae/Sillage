@@ -26,7 +26,7 @@ const assert=require('node:assert/strict');
  await page.screenshot({path:'artifacts/compare-all-desktop.png',fullPage:true});
  await page.locator('.comparison-item').nth(6).getByRole('button').click();
  await page.locator('.score-table').waitFor();
- assert.match(await page.locator('#detail-content').innerText(),/weighted points|Tied with|penalties/i);
+ assert.match(await page.locator('#detail-content').innerText(),/score points|Tied with|penalties|points behind/i);
  await page.getByRole('button',{name:'← All fragrances'}).click();
  await page.locator('#comparison-search').fill('Scent 7');
  assert.equal(await page.locator('.comparison-item:visible').count(),1);

@@ -286,7 +286,8 @@ def configured_provider():
 def merge_metadata(original,metadata):
     """Refresh provider priors while retaining every explicit user override."""
     result=collection_data(metadata);overrides=set(original.get('overrides',[]))
-    for key in ['rating','bottle_size','favorite','notes','tags','personal_longevity']:result[key]=original.get(key,result.get(key))
+    for key in ['rating','bottle_size','favorite','notes','tags','personal_longevity','limits']:result[key]=original.get(key,result.get(key))
+    result['limits']=original.get('limits') or {}
     for key in overrides:
         if key.startswith('attributes.'):
             attr=key.split('.',1)[1]

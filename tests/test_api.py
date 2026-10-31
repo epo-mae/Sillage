@@ -32,7 +32,7 @@ class ApiTests(unittest.TestCase):
             response=self.client.get(url)
             self.assertEqual(response.status_code,200)
             self.assertEqual(response.headers['Cache-Control'],'no-store')
-            for asset in ['app.js','catalog.js','atmosphere.js','layering.js','style.css','catalog.css','atmosphere.css']:
+            for asset in ['priorities.js','app.js','catalog.js','atmosphere.js','layering.js','style.css','catalog.css','atmosphere.css']:
                 expected=hashlib.sha256((Path(__file__).resolve().parent.parent/'static'/asset).read_bytes()).hexdigest()[:16]
                 self.assertIn('/'+asset+'?v='+expected,response.text)
                 with self.client.get('/'+asset+'?v='+expected) as asset_response:

@@ -89,9 +89,11 @@ class ProviderTests(unittest.TestCase):
     def test_refresh_keeps_overrides(self):
         m=normalize_fragella(ROW);old=collection_data(m)
         old.update(longevity=7,notes='my personal note',rating=5,overrides=['longevity','attributes.projection']);old['attributes']['projection']=30
+        old['limits']={'min_temperature':12,'avoid_confined':True}
         updated=merge_metadata(old,normalize_fragella({**ROW,'Sillage':'Enormous'}))
         self.assertEqual(updated['attributes']['projection'],30);self.assertEqual(updated['longevity'],7)
         self.assertEqual(updated['rating'],5);self.assertEqual(updated['notes'],'my personal note')
+        self.assertEqual(updated['limits'],old['limits'])
         self.assertEqual(updated['provenance']['attributes.projection']['source'],'user')
     def test_low_votes_less_confident_than_large_votes(self):
         m=normalize_fragella(ROW);f=collection_data(m);f['id']=1
