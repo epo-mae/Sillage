@@ -5,7 +5,7 @@ def classify(title):
     title = title.lower()
     for words, occasion, environment in [(['flight','plane'],'travel','confined'),(['meeting','office','interview','work','class'],'work','confined'),(['wedding','gala','formal'],'formal','indoor'),(['gym','run','hike','park','outdoor'],'outdoor','outdoor'),(['date'],'date','indoor'),(['dinner','restaurant'],'dinner','indoor'),(['party','club'],'party','indoor')]:
         if any(word in title for word in words): return occasion,environment
-    return 'casual','unknown'
+    return 'unknown','unknown'
 
 def build_context(preferences, weather=None, events=None, now=None, mode='now', event_id=None):
     zone = ZoneInfo(preferences.get('timezone','Pacific/Auckland'))
@@ -25,7 +25,7 @@ def build_context(preferences, weather=None, events=None, now=None, mode='now', 
     end = max([now+timedelta(hours=4)]+[datetime.fromisoformat(e['end']) for e in nearby])
     end = min(end,now+timedelta(hours=12))
     relevant = min(nearby,key=lambda e:e['start']) if nearby else None
-    occasion,environment = classify(relevant['title']) if relevant else ('casual','unknown')
+    occasion,environment = classify(relevant['title']) if relevant else ('unknown','unknown')
     occasion = preferences.get('occasion','automatic') if preferences.get('occasion','automatic')!='automatic' else occasion
     if occasion in ['work','interview','travel']: environment='confined'
     if occasion=='outdoor': environment='outdoor'

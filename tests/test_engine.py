@@ -15,6 +15,46 @@ def context(**changes):
     c=build_context(PREFS,now=NOW);c.update(temperature=12,humidity=60,occasion='dinner',environment='indoor',weather={'available':True});c.update(changes);return c
 
 class ScoringTests(unittest.TestCase):
+    def test_unknown_environment_and_occasion_are_not_scored(self):
+        result=score(fragrance(),context(environment='unknown',occasion='unknown'),PREFS,[])
+        for key in ['environment','occasion']:
+            self.assertNotIn(key,result['components'])
+            self.assertNotIn(key,result['weights'])
+            self.assertNotIn(key,result['contributions'])
+            self.assertIn(key,result['omitted'])
+        self.assertNotIn('surroundings',result['explanation'])
+        self.assertNotIn('casual',result['explanation'])
+        changed=fragrance(occasions=['work','party'])
+        self.assertEqual(result['score'],score(changed,context(environment='unknown',occasion='unknown'),PREFS,[])['score'])
+        self.assertAlmostEqual(sum(result['contributions'].values()),result['base'],delta=.08)
+    def test_no_plans_does_not_assume_casual(self):
+        c=build_context(PREFS,now=NOW)
+        self.assertEqual(c['occasion'],'unknown');self.assertEqual(c['environment'],'unknown')
+        event=dict(id=1,title='Something',start=NOW.isoformat(),end=(NOW+timedelta(hours=2)).isoformat())
+        self.assertEqual(build_context(PREFS,events=[event],now=NOW)['occasion'],'unknown')
+        c=build_context({**PREFS,'occasion':'casual'},now=NOW)
+        result=score(fragrance(),c,PREFS,[])
+        self.assertIn('occasion',result['components']);self.assertNotIn('environment',result['components'])
+    def test_missing_ratings_and_history_do_not_receive_default_points(self):
+        f=fragrance(rating=None)
+        result=score(f,context(),PREFS,[])
+        self.assertNotIn('preference',result['components']);self.assertNotIn('history',result['components'])
+        wear=dict(fragrance_id=1,created_at=NOW.isoformat(),feedback={'rating':5})
+        result=score(f,context(),PREFS,[wear])
+        self.assertEqual(result['components']['history'],100)
+    def test_unknown_context_has_no_mismatch_penalties(self):
+        c=context(temperature=None,humidity=None,environment=None,occasion=None,daypart=None,season=None,duration=None)
+        result=score(fragrance(attributes={'formality':0},rating=None,longevity=None),c,{},[])
+        self.assertIsNone(result['score']);self.assertEqual(result['penalties'],[])
+        self.assertIsNone(result['sprays'])
+        self.assertEqual(result['confidence'],'Low')
+        self.assertTrue(all(value==0 for value in result['contributions'].values()))
+    def test_unscorable_profiles_rank_after_profiles_with_evidence(self):
+        missing=fragrance(attributes={},rating=None,longevity=None,dayparts=[],seasons=[],occasions=[])
+        known=fragrance(2,rating=4)
+        results=rank([missing,known],context(),PREFS,[])
+        self.assertEqual(results[0]['fragrance']['id'],2)
+        self.assertIsNone(results[-1]['score'])
     def test_heat_hard_penalty(self):
         result=score(fragrance(),context(temperature=35),PREFS,[])
         self.assertTrue(any(p['amount']==30 for p in result['penalties']))

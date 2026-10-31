@@ -115,7 +115,7 @@ Database indexes protect concurrent additions. Archived versions can be re-added
 
 The deterministic engine consumes normalized community season, occasion and
 day/night suitability as priors. Context, hard penalties and user overrides take
-priority. Ratings shrink toward neutral when counts are sparse. Personal
+priority. Known community ratings can supply a history prior; missing ratings receive no default points. Personal
 longevity and satisfaction blend gradually with 5–25 equivalent prior
 observations, based on available community evidence; one or two wears cannot
 erase a strong prior. Confidence reflects vote support and inferred fields, so
