@@ -1,4 +1,4 @@
-import json, os, secrets, sqlite3, time, threading, math
+import json, os, secrets, sqlite3, time, threading, math, hashlib
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from functools import wraps
@@ -17,6 +17,12 @@ OCCASIONS=['casual','work','dinner','date','formal','wedding','interview','party
 
 def create_app(database=None, testing=False, fragrance_provider=None):
     app=Flask(__name__,static_folder=str(ROOT/'static'),static_url_path='')
+    # Tie each page load to the assets shipped with this deployment. Browsers and
+    # reverse proxies may retain unversioned JavaScript long after a rebuild.
+    index_html=(ROOT/'static/index.html').read_text(encoding='utf-8')
+    for asset in ['app.js','catalog.js','atmosphere.js','style.css','catalog.css','atmosphere.css','mark.svg']:
+        version=hashlib.sha256((ROOT/'static'/asset).read_bytes()).hexdigest()[:16]
+        index_html=index_html.replace(f'"/{asset}"',f'"/{asset}?v={version}"')
     data_dir=ROOT/'data'; data_dir.mkdir(exist_ok=True)
     secret=os.environ.get('SILLAGE_SECRET_KEY')
     if not secret:
@@ -86,7 +92,11 @@ def create_app(database=None, testing=False, fragrance_provider=None):
     @app.errorhandler(500)
     def failed(_): return jsonify(error='Something went wrong. Your saved data is safe; try again.'),500
     @app.get('/')
-    def index(): return app.send_static_file('index.html')
+    @app.get('/index.html')
+    def index():
+        response=app.make_response(index_html)
+        response.headers['Cache-Control']='no-store'
+        return response
     @app.get('/api/session')
     def get_session():
         if 'csrf' not in session: session['csrf']=secrets.token_hex(24)

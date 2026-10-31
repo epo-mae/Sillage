@@ -26,6 +26,17 @@ class ApiTests(unittest.TestCase):
         restarted=create_app(self.path,testing=True).test_client();csrf=restarted.get('/api/session').json['csrf'];login=restarted.post('/api/auth/login',json=dict(email='test@example.com',password='test-password-123'),headers={'X-CSRF-Token':csrf});self.assertEqual(login.status_code,200)
         self.assertEqual(restarted.get('/api/collection').json['collection'][0]['name'],'Edited')
     def test_csrf_required(self):self.assertEqual(self.client.post('/api/collection',json={}).status_code,403)
+    def test_entry_pages_version_assets_and_prevent_stale_html(self):
+        import hashlib
+        for url in ['/', '/index.html']:
+            response=self.client.get(url)
+            self.assertEqual(response.status_code,200)
+            self.assertEqual(response.headers['Cache-Control'],'no-store')
+            for asset in ['app.js','catalog.js','atmosphere.js','style.css','catalog.css','atmosphere.css']:
+                expected=hashlib.sha256((Path(__file__).resolve().parent.parent/'static'/asset).read_bytes()).hexdigest()[:16]
+                self.assertIn('/'+asset+'?v='+expected,response.text)
+                with self.client.get('/'+asset+'?v='+expected) as asset_response:
+                    self.assertEqual(asset_response.status_code,200)
     def test_only_owner_can_register(self):
         other=self.app.test_client();token=other.get('/api/session').json['csrf']
         self.assertFalse(other.get('/api/session').json['registration_open'])
