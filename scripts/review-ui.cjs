@@ -4,9 +4,9 @@ const {chromium}=require('C:/Users/Sebas/.cache/codex-runtimes/codex-primary-run
  const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
  const page=await browser.newPage({viewport:{width:1440,height:1000}}), errors=[];
  page.on('pageerror',e=>errors.push(e.message));
- await page.goto('http://127.0.0.1:8001/');
+ await page.goto(process.env.SILLAGE_REVIEW_URL||'http://127.0.0.1:8001/');
  await page.locator('#auth:not([hidden])').waitFor();
- await page.screenshot({path:'artifacts/editorial-welcome.png',fullPage:true});
+ await page.screenshot({path:'artifacts/midnight-welcome.png',fullPage:true});
  await page.locator('[name=name]').first().fill('Alex');
  await page.locator('[name=email]').fill(`review-${Date.now()}@example.com`);
  await page.locator('[name=password]').fill('review-only-password');
@@ -34,7 +34,7 @@ const {chromium}=require('C:/Users/Sebas/.cache/codex-runtimes/codex-primary-run
      await page.waitForTimeout(180);
      const overflow=await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth);
      if(overflow)errors.push(`${view} overflows at ${width}`);
-     await page.screenshot({path:`artifacts/editorial-${view}-${width}.png`,fullPage:true});
+     await page.screenshot({path:`artifacts/midnight-${view}-${width}.png`,fullPage:true});
    }
  }
  await page.locator('nav [data-page=collection]').click();
@@ -42,7 +42,7 @@ const {chromium}=require('C:/Users/Sebas/.cache/codex-runtimes/codex-primary-run
  await page.locator('#catalog-dialog').waitFor({state:'visible'});
  await page.locator('#catalog-query').fill('Sauvage');
  await page.waitForTimeout(800);
- await page.screenshot({path:'artifacts/editorial-search-mobile.png',fullPage:true});
+ await page.screenshot({path:'artifacts/midnight-search-mobile.png',fullPage:true});
  console.log(JSON.stringify({errors}));
  await browser.close();
  if(errors.length)process.exitCode=1;

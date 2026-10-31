@@ -2,11 +2,19 @@
 
 ## Design implemented
 
-The interface uses a charcoal navigation rail, warm paper surfaces, serif titles,
-readable system text, and a restrained brown accent. Product images carry the visual
-identity. Missing images use an honest typographic placeholder. Rules and spacing
-separate information; cards are reserved for the main recommendation and product
-selection. Mobile keeps a compact bottom navigation and a two-column collection.
+The interface adapts Sebastien's personal website: midnight slate (#252735), pale
+lavender text, pearlescent Fraunces titles, Newsreader reading text, and small
+hand-drawn SVGs. Four stable, labelled navigation drawings keep the fragrance
+workflows easy to find. Decorative marks remain in the gutters and never receive
+pointer events. The account page uses a large Sillage signature and a sketched
+perfume bottle. Cards and buttons stay restrained; reading areas are clear.
+
+Fonts, their SIL Open Font licenses, the original pearl texture, and drawings are
+preserved under static/assets, sourced from Sebastien's existing Website project.
+The texture has a solid-color fallback on load failure and in forced-color mode.
+Reduced-motion preferences disable transitions. Provider images are displayed
+without recoloring; white backgrounds can remain on source images without
+transparency. Fragella transparent images are preferred when available.
 
 Today answers what to wear, why it fits, and how to record it. Collection is a
 visual inventory. Journal records outcomes. Preferences contains configuration.
