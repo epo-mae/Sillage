@@ -10,6 +10,12 @@ score to inspect weighted contributions, penalties, ties, and missing data.
 Collection cards include **Remove**, with confirmation and a 15-second **Undo**.
 Removal excludes the fragrance from recommendations while preserving wear history.
 
+**Collection → Layering** saves test recipes with order and spray amounts. Record
+paired wears and feedback in **Journal → Layered wears**. Today may suggest one
+pair after repeat positive experience in similar weather and time of day, with
+evidence over the best single option. Untried pairs stay in exploration. See
+[LAYERING.md](LAYERING.md) for rules, controls and storage details.
+
 ## Run with Docker
 
 ```sh
@@ -77,9 +83,9 @@ Default weights: temperature 15, weather 12, occasion 15, environment 10, time 8
 
 Temperature uses both warmth and freshness, with a target that changes continuously
 with measured temperature (including a 70/30 air/feels-like blend when available).
-Humidity freshness bonuses apply only from 20�C; known outdoor wind/rain still
+Humidity freshness bonuses apply only from 20°C; known outdoor wind/rain still
 contribute separately. A weak temperature fit below 60 limits the final score to
-`100 � (temperature_fit / 60)^1.25`. This is an explicit model heuristic, not a
+`100 × (temperature_fit / 60)^1.25`. This is an explicit model heuristic, not a
 universal rule about a fragrance. The deduction is shown in the breakdown. Missing
 temperature data is omitted, and disabling its weight disables this limit. If the
 top candidate is limited, Today labels it a weak-temperature-fit fallback rather

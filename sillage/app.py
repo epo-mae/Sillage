@@ -8,6 +8,7 @@ from flask import Flask, request, jsonify, session, g
 from werkzeug.security import generate_password_hash, check_password_hash
 from .engine import rank, ATTRIBUTES, WEIGHTS
 from .context import build_context
+from . import layering
 from .providers import weather_for, import_calendar
 from .catalog import configured_provider, CatalogError, collection_data, merge_metadata, utc_now
 
@@ -20,7 +21,7 @@ def create_app(database=None, testing=False, fragrance_provider=None):
     # Tie each page load to the assets shipped with this deployment. Browsers and
     # reverse proxies may retain unversioned JavaScript long after a rebuild.
     index_html=(ROOT/'static/index.html').read_text(encoding='utf-8')
-    for asset in ['app.js','catalog.js','atmosphere.js','style.css','catalog.css','atmosphere.css','mark.svg']:
+    for asset in ['app.js','catalog.js','atmosphere.js','layering.js','style.css','catalog.css','atmosphere.css','mark.svg']:
         version=hashlib.sha256((ROOT/'static'/asset).read_bytes()).hexdigest()[:16]
         index_html=index_html.replace(f'"/{asset}"',f'"/{asset}?v={version}"')
     data_dir=ROOT/'data'; data_dir.mkdir(exist_ok=True)
@@ -324,6 +325,72 @@ def create_app(database=None, testing=False, fragrance_provider=None):
     @authenticated
     def clear_events(): write('DELETE FROM events WHERE user_id=?',(session['user_id'],)); return jsonify(ok=True)
     def wears(): return [dict(id=r['id'],fragrance_id=r['fragrance_id'],recommendation_id=r['recommendation_id'],created_at=r['created_at'],snapshot=json.loads(r['snapshot']),feedback=json.loads(r['feedback']) if r['feedback'] else None) for r in db().execute('SELECT * FROM wears WHERE user_id=? ORDER BY id DESC',(session['user_id'],))]
+    def layering_wears():
+        return [dict(id=r['id'],layering_id=r['layering_id'],recommendation_id=r['recommendation_id'],created_at=r['created_at'],snapshot=json.loads(r['snapshot']),feedback=json.loads(r['feedback']) if r['feedback'] else None) for r in db().execute('SELECT * FROM layering_wears WHERE user_id=? ORDER BY id DESC',(session['user_id'],))]
+    def recipes():
+        result=[]
+        for row in db().execute('SELECT * FROM layerings WHERE user_id=? AND archived=0 ORDER BY id DESC',(session['user_id'],)):
+            r=dict(row);a=owned('fragrances',r['first_id']);b=owned('fragrances',r['second_id'])
+            r.update(first=dict(json.loads(a['data']),id=a['id']),second=dict(json.loads(b['data']),id=b['id']),available=not a['archived'] and not b['archived'])
+            result.append(r)
+        return result
+    def rotation_wears(singles,pairs):
+        # Pair feedback never trains either bottle's individual rating/longevity.
+        return singles+[dict(fragrance_id=fid,created_at=w['created_at'],feedback=None) for w in pairs for fid in [w['snapshot']['recipe']['first_id'],w['snapshot']['recipe']['second_id']]]
+    @app.get('/api/layerings')
+    @authenticated
+    def get_layerings():return jsonify(recipes=recipes(),wears=layering_wears())
+    @app.post('/api/layerings')
+    @authenticated
+    def add_layering():
+        data=body();first=owned('fragrances',data.get('first_id'));second=owned('fragrances',data.get('second_id'))
+        if first['id']==second['id']:raise ValueError('Choose two different fragrances.')
+        if first['archived'] or second['archived']:raise ValueError('Choose fragrances currently in your collection.')
+        amounts=[]
+        for key in ['first_sprays','second_sprays']:
+            amount=finite(data.get(key),1,5,key)
+            if not amount.is_integer():raise ValueError('Use a whole number of sprays.')
+            amounts.append(int(amount))
+        identifier=write('INSERT INTO layerings(user_id,first_id,second_id,first_sprays,second_sprays,notes) VALUES(?,?,?,?,?,?)',(session['user_id'],first['id'],second['id'],*amounts,str(data.get('notes','')).strip()[:1000]))
+        return jsonify(id=identifier),201
+    @app.delete('/api/layerings/<int:identifier>')
+    @authenticated
+    def remove_layering(identifier):
+        owned('layerings',identifier);write('UPDATE layerings SET archived=1 WHERE id=?',(identifier,));return jsonify(ok=True)
+    @app.post('/api/layerings/<int:identifier>/wears')
+    @authenticated
+    def add_layering_wear(identifier):
+        owned('layerings',identifier);data=body()
+        recipe=next((r for r in recipes() if r['id']==identifier and r['available']),None)
+        if not recipe:raise ValueError('This recipe or one of its fragrances is no longer available.')
+        rid=data.get('recommendation_id')
+        if rid is not None:
+            rec=owned('recommendations',rid);saved=json.loads(rec['snapshot'])
+            if saved['mode']!='now' or (datetime.now(timezone.utc)-datetime.fromisoformat(rec['created_at'])).total_seconds()>3600:raise ValueError('Refresh Wear Now before logging this suggestion.')
+            option=saved.get('layering_option')
+            if not option or option['recipe']['id']!=identifier:raise ValueError('This recipe was not suggested in that recommendation.')
+            context=saved['context']
+        else:
+            prefs=json.loads(user()['preferences']);weather,_=weather_for(prefs)
+            context=build_context(prefs,weather,events() if prefs['calendar_enabled'] else [])
+        token=str(data.get('request_id','')).strip()[:80] or None
+        snapshot=dict(recipe=recipe,context=context,recommended=rid is not None)
+        # Serialize cross-table duplicate checks with the single-fragrance logger.
+        db().execute('BEGIN IMMEDIATE')
+        if rid is not None and (db().execute('SELECT 1 FROM wears WHERE recommendation_id=?',(rid,)).fetchone() or db().execute('SELECT 1 FROM layering_wears WHERE recommendation_id=?',(rid,)).fetchone()):
+            db().rollback();raise ValueError('A wear is already recorded for this recommendation.')
+        identifier=write('INSERT INTO layering_wears(user_id,layering_id,created_at,snapshot,request_id,recommendation_id) VALUES(?,?,?,?,?,?)',(session['user_id'],identifier,now(),json.dumps(snapshot),token,rid))
+        return jsonify(id=identifier),201
+    @app.post('/api/layering-wears/<int:identifier>/feedback')
+    @authenticated
+    def layering_feedback(identifier):
+        owned('layering_wears',identifier);data=body();rating=finite(data.get('rating'),1,5,'rating')
+        comparison=data.get('comparison');strength=data.get('strength')
+        if comparison not in ['better together','prefer alone','unsure']:raise ValueError('Choose how the pair compared with either fragrance alone.')
+        if strength not in ['perfect','too strong','too weak']:raise ValueError('Choose the combined strength.')
+        longevity=finite(data['longevity'],.5,48,'longevity') if data.get('longevity') not in [None,''] else None
+        feedback=dict(rating=rating,comparison=comparison,strength=strength,longevity=longevity,note=str(data.get('note',''))[:2000])
+        write('UPDATE layering_wears SET feedback=? WHERE id=?',(json.dumps(feedback),identifier));return jsonify(ok=True)
     @app.post('/api/recommendations')
     @authenticated
     def recommend():
@@ -331,8 +398,10 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         if mode not in ['now','tonight','event']: raise ValueError('Unknown recommendation mode.')
         weather,warning=weather_for(prefs)
         context=build_context(prefs,weather,events() if prefs['calendar_enabled'] else [],mode=mode,event_id=data.get('event_id'))
-        candidates=rank(collection(),context,prefs,wears())
-        snapshot=dict(context=context,candidates=candidates,warning=warning,mode=mode,application=prefs['application'],weights=prefs['weights'],engine_version=4)
+        singles=wears();pairs=layering_wears();saved_recipes=recipes()
+        candidates=rank(collection(),context,prefs,rotation_wears(singles,pairs))
+        snapshot=dict(context=context,candidates=candidates,warning=warning,mode=mode,application=prefs['application'],weights=prefs['weights'],engine_version=5,
+                      layering_option=layering.recommendation(saved_recipes,pairs,singles,candidates,context),layering_experiments=layering.experiments(candidates,saved_recipes))
         rid=write('INSERT INTO recommendations(user_id,created_at,snapshot) VALUES(?,?,?)',(session['user_id'],now(),json.dumps(snapshot)))
         return jsonify(dict(snapshot,id=rid))
     @app.get('/api/history')
@@ -348,11 +417,13 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         if not candidate: raise ValueError('Select a fragrance from this recommendation.')
         if snapshot['mode']!='now': raise ValueError('Switch to Wear Now to record what you apply now.')
         if (datetime.now(timezone.utc)-datetime.fromisoformat(rec['created_at'])).total_seconds()>3600: raise ValueError('Refresh your recommendation before recording a wear.')
-        if db().execute('SELECT id FROM wears WHERE recommendation_id=? AND user_id=?',(rec['id'],session['user_id'])).fetchone(): raise ValueError('This recommendation already has a wear recorded.')
         fid=candidate['fragrance']['id']; owned('fragrances',fid)
         if owned('fragrances',fid)['archived']: raise ValueError('This fragrance has been archived. Refresh your recommendation.')
         actual=finite(data['sprays'],1,20,'sprays') if data.get('sprays') is not None else None
         wear_snapshot=dict(context=snapshot['context'],candidate=candidate,actual_sprays=actual)
+        db().execute('BEGIN IMMEDIATE')
+        if db().execute('SELECT id FROM wears WHERE recommendation_id=? AND user_id=?',(rec['id'],session['user_id'])).fetchone() or db().execute('SELECT id FROM layering_wears WHERE recommendation_id=? AND user_id=?',(rec['id'],session['user_id'])).fetchone():
+            db().rollback();raise ValueError('This recommendation already has a wear recorded.')
         wid=write('INSERT INTO wears(user_id,fragrance_id,recommendation_id,created_at,snapshot) VALUES(?,?,?,?,?)',(session['user_id'],fid,rec['id'],now(),json.dumps(wear_snapshot)))
         return jsonify(id=wid),201
     @app.post('/api/wears/<int:wid>/feedback')
@@ -366,5 +437,5 @@ def create_app(database=None, testing=False, fragrance_provider=None):
         write('UPDATE wears SET feedback=? WHERE id=?',(json.dumps(result),wid)); return jsonify(ok=True)
     @app.get('/api/export')
     @authenticated
-    def export(): return jsonify(profile=profile(user()),collection=collection(),events=events(),history=history().get_json())
+    def export(): return jsonify(profile=profile(user()),collection=collection(),events=events(),history=history().get_json(),layering=get_layerings().get_json())
     return app

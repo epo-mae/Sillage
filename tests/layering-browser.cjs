@@ -1,0 +1,31 @@
+// Fresh isolated preview only. Set SILLAGE_REVIEW_URL to its URL.
+const {chromium}=require('C:/Users/Sebas/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(process.env.SILLAGE_REVIEW_URL||'http://127.0.0.1:8013/');
+ await page.locator('#name-label').waitFor();await page.locator('[name=name]').first().fill('Layering reviewer');await page.locator('[name=email]').fill('pair-review@example.com');await page.locator('[name=password]').fill('review-password');await page.locator('#auth-submit').click();await page.locator('#shell:not([hidden])').waitFor();
+ await page.evaluate(async()=>{const {csrf}=await(await fetch('/api/session')).json();for(const name of ['Cedar fixture','Citrus fixture']){const r=await fetch('/api/collection',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({brand:'UI fixture',name,attributes:{projection:50},longevity:8,rating:4})});if(!r.ok)throw Error('Fixture setup failed')}});
+ await page.reload();await page.locator('.hero-card').waitFor();assert.equal(await page.locator('.layering-suggestion').count(),0);
+ await page.locator('nav [data-page=collection]').click();await page.getByRole('button',{name:'Layering',exact:true}).click();await page.locator('#layering-form').waitFor();
+ await page.screenshot({path:'artifacts/layering-desktop.png',fullPage:true});
+ const form=page.locator('#layering-form');const first=await form.locator('[name=first_id]').inputValue();
+ await form.locator('[name=second_id]').selectOption(first);await form.getByRole('button',{name:'Save test recipe'}).click();await page.locator('#layering-error').filter({hasText:'different'}).waitFor();
+ await form.locator('[name=second_id]').selectOption({index:1});await form.locator('[name=first_sprays]').fill('2');await form.locator('[name=notes]').fill('Test the citrus accent.');await form.getByRole('button',{name:'Save test recipe'}).click();await page.locator('.layering-recipe').first().waitFor();
+ assert.match(await page.locator('.layering-recipe').first().innerText(),/Untried/);
+ await page.setViewportSize({width:390,height:844});await page.screenshot({path:'artifacts/layering-mobile.png',fullPage:true});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.getByRole('button',{name:'Log pair wear now'}).click();await page.waitForFunction(()=>!document.querySelector('#layering-dialog').open);
+ await page.locator('nav [data-page=journal]').click();await page.locator('[data-layer-action=feedback]').waitFor();assert.match(await page.locator('.journal-item').innerText(),/2 sprays/);
+ await page.getByRole('button',{name:'How was the combination?'}).click();await page.locator('#pair-feedback-form').waitFor();
+ await page.locator('#pair-feedback-form [name=comparison]').selectOption('better together');await page.locator('#pair-feedback-form [name=rating]').fill('5');await page.locator('#pair-feedback-form [name=strength]').selectOption('perfect');await page.locator('#pair-feedback-form [name=longevity]').fill('7');
+ await page.screenshot({path:'artifacts/layering-feedback-mobile.png',fullPage:true});await page.getByRole('button',{name:'Save pair feedback'}).click();await page.waitForFunction(()=>!document.querySelector('#pair-feedback-dialog').open);await page.getByRole('button',{name:'Edit pair feedback'}).waitFor();
+ await page.locator('nav [data-page=home]').click();await page.locator('.hero-card').waitFor();assert.equal(await page.locator('.layering-suggestion').count(),0);
+ await page.locator('nav [data-page=collection]').click();await page.getByRole('button',{name:'Layering',exact:true}).click();await page.getByRole('button',{name:'Remove recipe'}).waitFor();
+ page.once('dialog',d=>d.accept());await page.getByRole('button',{name:'Remove recipe'}).click();await page.waitForFunction(()=>document.querySelectorAll('.layering-recipe').length===0);
+ await page.locator('#layering-dialog .close-dialog').click();await page.locator('nav [data-page=journal]').click();await page.locator('[data-layer-action=feedback]').waitFor();
+ assert.match(await page.locator('.journal-item').innerText(),/better together/);assert.deepEqual(errors,[]);
+ console.log('PASS: save and validate exact recipe, paired wear, feedback, mobile layout, no premature recommendation, archive with retained history.');await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});
