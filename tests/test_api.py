@@ -58,6 +58,22 @@ class ApiTests(unittest.TestCase):
     def test_archive_preserves_wear(self):
         f=self.fragrance();r=self.post('/recommendations',{}).json;self.post('/wears',dict(recommendation_id=r['id'],fragrance_id=f['id']))
         self.client.delete('/api/collection/'+str(f['id']),headers={'X-CSRF-Token':self.csrf});self.assertEqual(self.client.get('/api/collection').json['collection'],[]);self.assertEqual(len(self.client.get('/api/history').json['wears']),1)
+        restored=self.client.patch('/api/collection/'+str(f['id']),json={'archived':False},headers={'X-CSRF-Token':self.csrf})
+        self.assertEqual(restored.status_code,200)
+        self.assertEqual(self.client.get('/api/collection').json['collection'][0]['id'],f['id'])
+        self.assertEqual(len(self.client.get('/api/history').json['wears']),1)
+    def test_recommendations_include_every_active_fragrance(self):
+        ids=[]
+        for i in range(7):
+            f=self.post('/collection',dict(brand='Test',name='Fragrance '+str(i),attributes={'freshness':i*10,'warmth':100-i*10})).json['fragrance']
+            ids.append(f['id'])
+        result=self.post('/recommendations',{}).json
+        self.assertEqual({c['fragrance']['id'] for c in result['candidates']},set(ids))
+        self.assertTrue(all('contributions' in c and 'penalties' in c for c in result['candidates']))
+        self.client.delete('/api/collection/'+str(ids[-1]),headers={'X-CSRF-Token':self.csrf})
+        result=self.post('/recommendations',{}).json
+        self.assertEqual(len(result['candidates']),6)
+        self.assertNotIn(ids[-1],[c['fragrance']['id'] for c in result['candidates']])
     def test_weather_failure_graceful(self):
         self.fragrance()
         with patch('sillage.app.weather_for',return_value=(None,'Provider unavailable')):

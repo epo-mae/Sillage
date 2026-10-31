@@ -4,6 +4,12 @@ Single-owner access: create the owner account on first launch. Registration clos
 after setup, and subsequent visitors can only sign in. Create your account before
 sharing the public address.
 
+Use **Compare all** in Collection or **Compare all fragrances** on Today to see
+every active fragrance ranked for the same context. Search the list and open any
+score to inspect weighted contributions, penalties, ties, and missing data.
+Collection cards include **Remove**, with confirmation and a 15-second **Undo**.
+Removal excludes the fragrance from recommendations while preserving wear history.
+
 ## Run with Docker
 
 ```sh

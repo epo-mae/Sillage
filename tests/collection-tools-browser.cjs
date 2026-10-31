@@ -1,0 +1,66 @@
+// Run against a fresh isolated preview, never a personal collection database.
+const {chromium}=require('C:/Users/Sebas/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const browser=await chromium.launch({executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',headless:true});
+ const page=await browser.newPage({viewport:{width:1440,height:1000}}),errors=[];
+ page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(process.env.SILLAGE_REVIEW_URL||'http://127.0.0.1:8006/');
+ await page.locator('#auth:not([hidden])').waitFor();
+ await page.locator('[name=name]').first().fill('Review');
+ await page.locator('[name=email]').fill('review@example.com');
+ await page.locator('[name=password]').fill('review-password');
+ await page.locator('#auth-submit').click();
+ await page.locator('#shell:not([hidden])').waitFor();
+ await page.evaluate(async()=>{
+   const {csrf}=await (await fetch('/api/session')).json();
+   for(let i=0;i<7;i++){
+     const r=await fetch('/api/collection',{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf},body:JSON.stringify({brand:'Review Studio',name:'Scent '+(i+1),longevity:3+i,attributes:i===6?{}:{freshness:i*15,warmth:90-i*10,projection:20+i*10}})});
+     if(!r.ok)throw Error('Fixture creation failed');
+   }
+ });
+ await page.reload();await page.locator('.hero-card').waitFor();
+ await page.locator('nav [data-page=collection]').click();
+ await page.getByRole('button',{name:'Compare all',exact:true}).click();
+ assert.equal(await page.locator('.comparison-item').count(),7);
+ await page.screenshot({path:'artifacts/compare-all-desktop.png',fullPage:true});
+ await page.locator('.comparison-item').nth(6).getByRole('button').click();
+ await page.locator('.score-table').waitFor();
+ assert.match(await page.locator('#detail-content').innerText(),/weighted points|Tied with|penalties/i);
+ await page.getByRole('button',{name:'← All fragrances'}).click();
+ await page.locator('#comparison-search').fill('Scent 7');
+ assert.equal(await page.locator('.comparison-item:visible').count(),1);
+ await page.locator('#comparison-search').fill('not in collection');
+ assert.equal(await page.locator('#comparison-no-results').isVisible(),true);
+ await page.locator('#comparison-search').fill('');
+ await page.setViewportSize({width:390,height:844});
+ assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
+ await page.screenshot({path:'artifacts/compare-all-mobile.png',fullPage:true});
+ await page.locator('#detail .close-dialog').click();
+ await page.locator('.collection-card').first().getByRole('button',{name:/^Remove /}).click();
+ await page.getByRole('button',{name:'Keep fragrance'}).click();
+ assert.equal(await page.locator('.collection-card').count(),7);
+ await page.locator('.collection-card').first().getByRole('button',{name:/^Remove /}).click();
+ await page.screenshot({path:'artifacts/remove-fragrance-mobile.png',fullPage:true});
+ await page.locator('#remove-confirm').click();
+ await page.waitForFunction(()=>document.querySelectorAll('.collection-card').length===6);
+ await page.getByRole('button',{name:'Undo',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelectorAll('.collection-card').length===7);
+ await page.locator('nav [data-page=home]').click();await page.locator('.hero-card').waitFor();
+ await page.locator('.hero-actions [data-action=wear]').click();
+ await page.waitForFunction(()=>document.querySelector('.hero-actions [data-action=wear]')?.disabled);
+ const id=await page.locator('.hero-actions [data-action=wear]').getAttribute('data-id');
+ await page.locator('nav [data-page=collection]').click();
+ await page.locator(`.collection-card [data-action=archive][data-id="${id}"]`).click();
+ await page.locator('#remove-confirm').click();
+ await page.waitForFunction(()=>document.querySelectorAll('.collection-card').length===6);
+ await page.getByRole('button',{name:'Compare all',exact:true}).click();
+ await page.waitForFunction(()=>document.querySelector('#detail').open&&document.querySelectorAll('.comparison-item').length===6);
+ await page.locator('#detail .close-dialog').click();
+ await page.locator('nav [data-page=journal]').click();
+ await page.locator('.journal-item').waitFor();
+ assert.equal(await page.locator('.journal-item').count(),1);
+ assert.deepEqual(errors,[]);
+ console.log('PASS: all seven ranked, lowest score breakdown, search, mobile, cancel, remove, undo, refreshed comparison, preserved wear history.');
+ await browser.close();
+})().catch(e=>{console.error(e);process.exit(1)});
