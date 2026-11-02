@@ -11,3 +11,18 @@ artifacts/
 *.db-shm
 compose.override.yaml
 compose.override.yml
+
+# Private exports, credentials, and local diagnostics
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.ics
+*.pem
+*.key
+*.p12
+*.pfx
+*.log
+backups/
+exports/
+playwright-report/
+test-results/

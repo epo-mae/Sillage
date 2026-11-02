@@ -1,4 +1,4 @@
-# Publish Sillage at sillage.sebsoong.com
+# Publish Sillage at sillage.example.com
 
 Sillage publishes only on `127.0.0.1:18473` by default. This dedicated port avoids
 the common port 8000; if another service uses it, change `SILLAGE_PUBLIC_PORT` and
@@ -37,7 +37,7 @@ Open your existing tunnel's published application routes/public hostnames and ad
 | Setting | Value |
 | --- | --- |
 | Subdomain | `sillage` |
-| Domain | `sebsoong.com` |
+| Domain | `example.com` |
 | Path | Leave empty |
 | Service type | HTTP |
 | Service URL | `127.0.0.1:18473` |
@@ -55,7 +55,7 @@ the existing `ingress:` list, before any wildcard matching this domain and befor
 the final catch-all rule:
 
 ```yaml
-  - hostname: sillage.sebsoong.com
+  - hostname: sillage.example.com
     service: http://127.0.0.1:18473
 ```
 
@@ -64,15 +64,15 @@ configuration path if it differs, validate before restarting:
 
 ```sh
 sudo cloudflared tunnel --config /etc/cloudflared/config.yml ingress validate
-sudo cloudflared tunnel --config /etc/cloudflared/config.yml ingress rule https://sillage.sebsoong.com
+sudo cloudflared tunnel --config /etc/cloudflared/config.yml ingress rule https://sillage.example.com
 ```
 
 Create the DNS route using a cloudflared CLI authenticated to your Cloudflare account:
 
 ```sh
-cloudflared tunnel route dns YOUR_EXISTING_TUNNEL_NAME_OR_ID sillage.sebsoong.com
+cloudflared tunnel route dns YOUR_EXISTING_TUNNEL_NAME_OR_ID sillage.example.com
 sudo systemctl restart cloudflared
-curl -I https://sillage.sebsoong.com
+curl -I https://sillage.example.com
 ```
 
 Replace `YOUR_EXISTING_TUNNEL_NAME_OR_ID` with your existing tunnel name or UUID.
